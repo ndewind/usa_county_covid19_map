@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+
+<meta charset="utf-8" name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+
+	.bodyText { 
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:70em;
+		text-align: justify;
+		text-justify: inter-word; }
+
+	.plotArea { 
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:70em;
+		height:auto;
+		text-align: center;
+		text-justify: inter-word;
+		line-height: 3;}
+
+	.plotAreaSmall { 
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:35em;
+		height:auto;
+		text-align: center;
+		text-justify: inter-word;}
+	
+	.titleText { 
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:70em }
+
+	.column {
+		float: left;
+	}
+	
+	.map {
+		width: 60%;
+	}
+	
+	.line {
+		width: 40%;
+	}
+	
+	.rowContainer { 
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:70em;
+		height:auto;
+		text-align: center;
+		text-justify: inter-word;}
+	
+	/* Clear floats after the columns */
+	.row {
+		font-family: Arial, Helvetica, sans-serif;
+		margin-left: auto;
+		margin-right: auto;
+		max-width:70em;
+		height:auto;
+		text-align: center;
+		text-justify: inter-word;}
+	}
+	.row:after {
+	  content: "";
+	  display: table;
+	  clear: both;
+	}
+		
+	/* Responsive layout - makes the two columns stack on top of each other instead of next to each other */
+	@media screen and (max-width: 70em) {
+	  .column.map, .column.line {
+		width: 100%;
+	  }
+	}
+	
+</style>
+
+<head>
+	<!-- Load plotly.js into the DOM -->
+	<script src='https://cdn.plot.ly/plotly-latest.min.js'></script>
+	<!--Load JQuery-->
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+	<!-- Load bootstrap -->
+	<link href="bootstrap/css/bootstrap.min.css" rel="stylesheet">
+	<script src="bootstrap/js/bootstrap.bundle.min.js"></script>
+	
+</head>
+
+<body>
+	
+	<div class="titleText">
+	
+		<h1>COVID-19 US County Dashboard</h1>
+	
+		<p>by <a href="https://nickdewind.com/">Nick DeWind</a> May 18, 2020 </p>
+		
+	</div>
+	
+	<p class="bodyText"> Click the buttons to toggle between deaths and cases, between totals and population adjusted numbers, and between all data and just data from the last two weeks. Scroll zoom in and out on the map, and click a county to see a timeseries.
+	</p>
+	<br><br>
+	
+	<div class="plotArea">
+		<p>
+			<!-- Radio buttons -->	
+			<form id="deathToggleForm" class="btn-group btn-group-toggle" data-toggle="buttons">
+			  <label class="btn btn-secondary active">
+				<input id="deathBut" type="radio" name="deathToggle" value="deaths" checked="true">Deaths<br>
+			  </label>
+			  <label class="btn btn-secondary">
+				<input id="casesBut" type="radio" name="deathToggle" value="cases">Cases<br>
+			  </label>
+			</form>
+			
+			<form id="k100Form" class="btn-group btn-group-toggle" data-toggle="buttons">
+			  <label class="btn btn-secondary active">
+				<input id="totalBut" type="radio" name="k100" value="total">Total<br>
+			  </label>
+			  <label class="btn btn-secondary">
+				<input id="per100kBut" type="radio" name="k100" value="k100" checked="true">Per 100k<br>
+			  </label>
+			</form>
+			
+			<form id="last2Form" class="btn-group btn-group-toggle" data-toggle="buttons">
+			  <label class="btn btn-secondary active">
+				<input id="allBut" type="radio" name="last2" value="all" checked="true">All Dates<br>
+			  </label>
+			  <label class="btn btn-secondary">
+				<input id="last2But" type="radio" name="last2" value="last2">Last 2 Weeks<br>
+			  </label>
+			</form>
+	
+		</p>
+	
+	</div>
+	
+	<div class="rowContainer">	
+		<div class="row">
+			<div class="column map">
+				<div class="plotArea" id='mapDiv'><!-- Plotly chart will be drawn inside this DIV --></div>
+			</div>
+			<div class="column line">
+				<div class="plotArea" id='linePlotDiv'></div>
+			</div>
+		</div>
+	</div>
+	
+	<div class="plotAreaSmall" id='barPlotDiv'><!-- Plotly chart will be drawn inside this DIV --></div>
+	
+	<p class="bodyText"> <a href="https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series">raw data</a></p>
+	
+</body>
+
+<script>
+Plotly.d3.json('https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json', function(countyFIPS) {
+	Plotly.d3.csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv', function(err,jhuRows) {
+	Plotly.d3.csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv', function(err,jhuCaseRows) {
+	
+	// pull in the cases dataset
+	
+	var currZdata;
+	var mapTitle;
+	var currYdata;
+	var lineTitle;
+	var colorScale;
+	var mapBoxSave = {
+				style: "light", 
+				center: {
+					lon: -97, 
+					lat: 38}, 
+				zoom: 2.5
+			};
+	var deathCase = document.getElementById("deathToggleForm");
+	var k100 = document.getElementById("k100Form");
+	var last2 = document.getElementById("last2Form");
+	document.getElementById("deathBut").checked = true;
+	document.getElementById("per100kBut").checked = true;
+	document.getElementById("allBut").checked = true;
+	
+	
+	// get data from the jhu raw csv
+	let jhuID = unpack(jhuRows,'UID');
+	let jhuCaseID = unpack(jhuCaseRows,'UID');
+	let pop = unpack(jhuRows,'Population');
+	pop = pop.map(x => Number(x));
+	
+	// check that the rows in the cases spreadsheet are the same as the rows in the deaths spreadsheet
+	for (let krow = 0; krow < jhuID.length; krow++) {
+		if (jhuID[krow] !== jhuCaseID[krow]){
+			console.log('mismatch detected in row ' + krow)
+		}
+	}
+	
+	// make an array of dates from jan 22 (start of dataset to now)
+	let jan22 = new Date(2020,0,22); // data start date
+	let today = new Date;
+	let thisDate = new Date(jan22);
+	let oneDayInms = 1000 * 60 * 60 * 24;
+	let ndays2check = Math.round( (today-jan22)/oneDayInms ) ;
+	let dateStr = [];
+	for (let kdate = 0; kdate < ndays2check; kdate++){
+		let dateNums = [];
+		let tempYear;
+		thisDate = new Date(jan22);
+		thisDate.setDate(thisDate.getDate() + kdate);
+		dateNums[0] = thisDate.getMonth() + 1;
+		dateNums[1] = thisDate.getDate();
+		dateNums[2] = thisDate.getFullYear();
+		dateStr[kdate] = dateNums[0].toString() + "/" + dateNums[1].toString() + "/" + dateNums[2].toString().slice(2,4)
+	}
+	
+	// timeseries data for each county (cumulative deaths)
+	var tsCum = [];
+	//var tsCum100k = [];
+	var deathsTot = [];
+	var deathsLast2 = [];
+	var deathsTot100k = [];
+	var deathsLast2100k = [];
+	var tsCaseCum = [];
+	//var tsCaseCum100k = [];
+	var casesTot = [];
+	var casesLast2 = [];
+	var casesTot100k = [];
+	var casesLast2100k = [];
+	for (let kcnt = 0; kcnt < jhuRows.length; kcnt++){
+		tsCum[kcnt]=[];
+		//tsCum100k[kcnt]=[];
+		// deaths timeseries
+		for (let kdate = 0; kdate < dateStr.length; kdate++){
+			thisNum = Number(jhuRows[kcnt][dateStr[kdate]]);
+			if ( !Number.isNaN(thisNum) ){
+				tsCum[kcnt][kdate] = thisNum;
+				//tsCum100k[kcnt][kdate] = thisNum / pop[kcnt];
+			}
+		}
+		
+		// cases timeseries
+		tsCaseCum[kcnt]=[];
+		//tsCaseCum100k[kcnt]=[];
+		for (let kdate = 0; kdate < dateStr.length; kdate++){
+			thisNum = Number(jhuCaseRows[kcnt][dateStr[kdate]]);
+			if ( !Number.isNaN(thisNum) ){
+				tsCaseCum[kcnt][kdate] = thisNum;
+				//tsCaseCum100k[kcnt][kdate] = thisNum / pop[kcnt];
+			}
+		}
+		
+		// death summary stats
+		deathsTot[kcnt] = tsCum[kcnt][tsCum[kcnt].length-1];
+		if (deathsTot[kcnt] < 0){deathsTot[kcnt] = 0}
+		deathsLast2[kcnt] = tsCum[kcnt][tsCum[kcnt].length-1] - tsCum[kcnt][tsCum[kcnt].length-15];
+		if (deathsLast2[kcnt] < 0){deathsLast2[kcnt] = 0}
+		deathsTot100k[kcnt] = deathsTot[kcnt]/pop[kcnt]*100000;
+		deathsLast2100k[kcnt] = deathsLast2[kcnt]/pop[kcnt]*100000;
+		
+		// cases summary stats
+		casesTot[kcnt] = tsCaseCum[kcnt][tsCaseCum[kcnt].length-1];
+		if (casesTot[kcnt] < 0){casesTot[kcnt] = 0}
+		casesLast2[kcnt] = tsCaseCum[kcnt][tsCaseCum[kcnt].length-1] - tsCaseCum[kcnt][tsCaseCum[kcnt].length-15];
+		if (casesLast2[kcnt] < 0){casesLast2[kcnt] = 0}
+		casesTot100k[kcnt] = casesTot[kcnt]/pop[kcnt]*100000;
+		casesLast2100k[kcnt] = casesLast2[kcnt]/pop[kcnt]*100000;
+	}
+	//console.log(tsCum[1864])
+	
+	// timeseries data for each county (daily deaths and cases)
+	var tsDaily = [];
+	var tsCasesDaily = [];
+	var tsDaily100k = [];
+	var tsCasesDaily100k = [];
+	for (let kcnt = 0; kcnt < jhuRows.length; kcnt++){
+		tsDaily[kcnt]=[];
+		tsDaily[kcnt][0] = tsCum[kcnt][0];
+		tsDaily100k[kcnt] = [];
+		tsDaily100k[kcnt][0] = tsDaily[kcnt][0] / pop[kcnt] * 100000;
+		tsCasesDaily[kcnt]=[];
+		tsCasesDaily[kcnt][0] = tsCum[kcnt][0];
+		tsCasesDaily100k[kcnt] = [];
+		tsCasesDaily100k[kcnt][0] = tsCasesDaily[kcnt][0] / pop[kcnt] * 100000;
+		for (let kdate = 1; kdate < tsCum[kcnt].length; kdate++){
+			tsDaily[kcnt][kdate] = tsCum[kcnt][kdate] - tsCum[kcnt][kdate-1];
+			tsDaily100k[kcnt][kdate] = tsDaily[kcnt][kdate] / pop[kcnt] * 100000;
+			tsCasesDaily[kcnt][kdate] = tsCaseCum[kcnt][kdate] - tsCaseCum[kcnt][kdate-1];
+			tsCasesDaily100k[kcnt][kdate] = tsCasesDaily[kcnt][kdate] / pop[kcnt] * 100000;
+		}
+	}
+	//console.log(tsDaily[1864])
+	
+	// get the ids from the fips data
+	let zdata = {deathsTot:[],deathsLast2:[],deathsTot100k:[],deathsLast2100k:[],casesTot:[],casesLast2:[],casesTot100k:[],casesLast2100k:[],
+		deathsTS:[],deathsTS100k:[],casesTS:[],casesTS100k:[]};
+	let id = [];
+	let countyName = [];
+	let thisJHUIndx;
+	for (let kcnty = 0; kcnty < countyFIPS.features.length; kcnty++) {
+		
+		// make an array of unique id numbers (FIPS system). add the USA country code "840" so these codes match the JHU data county codes.
+		id[kcnty] = "840" + countyFIPS.features[kcnty].id;
+		countyName[kcnty] = countyFIPS.features[kcnty].properties.NAME;
+		countyFIPS.features[kcnty].id = id[kcnty];
+		
+		// find the corresponding JHU data entry
+		thisJHUIndx = jhuID.indexOf(id[kcnty]);
+		if (thisJHUIndx === -1){
+			//deaths
+			zdata.deathsTot[kcnty] = 0;
+			zdata.deathsLast2[kcnty] = 0;
+			zdata.deathsTot100k[kcnty] = 0;
+			zdata.deathsLast2100k[kcnty] = 0;
+			zdata.deathsTS[kcnty] = [];
+			zdata.deathsTS100k[kcnty] = [];
+			//cases
+			zdata.casesTot[kcnty] = 0;
+			zdata.casesLast2[kcnty] = 0;
+			zdata.casesTot100k[kcnty] = 0;
+			zdata.casesLast2100k[kcnty] = 0;
+		}else{
+			//deaths
+			zdata.deathsTot[kcnty] = deathsTot[thisJHUIndx];
+			zdata.deathsLast2[kcnty] = deathsLast2[thisJHUIndx];
+			zdata.deathsTot100k[kcnty] = deathsTot100k[thisJHUIndx];
+			zdata.deathsLast2100k[kcnty] = deathsLast2100k[thisJHUIndx];
+			zdata.deathsTS[kcnty] = Array.from(tsDaily[thisJHUIndx]);
+			zdata.deathsTS100k[kcnty] = Array.from(tsDaily100k[thisJHUIndx]);
+			//cases
+			zdata.casesTot[kcnty] = casesTot[thisJHUIndx];
+			zdata.casesLast2[kcnty] = casesLast2[thisJHUIndx];
+			zdata.casesTot100k[kcnty] = casesTot100k[thisJHUIndx];
+			zdata.casesLast2100k[kcnty] = casesLast2100k[thisJHUIndx];
+			zdata.casesTS[kcnty] = Array.from(tsCasesDaily[thisJHUIndx]);
+			zdata.casesTS100k[kcnty] = Array.from(tsCasesDaily100k[thisJHUIndx]);
+		}
+		
+		// make boroughs equal to new york totals. change text to NYC too.
+		
+	}
+	
+	genZData();
+	plotMap();
+	let clickLockIndx = 2754;
+	genYData(clickLockIndx);
+	plotLine(clickLockIndx);
+	
+	function plotMap(){
+		var data = [{
+			type: "choroplethmapbox", 
+			name: "US counties", 
+			geojson: countyFIPS, 
+			locations: id,
+			z: currZdata,
+			text: countyName,
+			zmin: 0, 
+			colorscale: colorScale,
+			//zmax: 280, 
+			colorbar: {
+				y: 0, 
+				yanchor: "bottom", 
+			}
+		}];
+
+		var layout = {
+			mapbox: mapBoxSave, 
+			margin: {
+				t: 50, 
+				b: 50
+			},
+			title: {
+				text: mapTitle
+			}
+		};
+		
+		config = {
+		  mapboxAccessToken: 'pk.eyJ1IjoibmRld2luZDg0IiwiYSI6ImNrYWJneWY5MTB4NmEzNm1na24yMWFtcDUifQ.0PyM5M-QPaMsdMI57wZ-Fw',
+		  responsive: true
+		}
+		
+		Plotly.newPlot('mapDiv', data, layout, config);
+		
+		
+		mapPlot = document.getElementById('mapDiv')
+		mapPlot.on('plotly_click', function(clickData){
+			clickLockIndx = clickData.points[0].pointIndex;
+			genYData(clickLockIndx);
+			plotLine(clickLockIndx)
+			console.log(clickLockIndx)
+		});
+		mapPlot.on('plotly_doubleclick', function(clickData){
+			mapBoxSave = {
+				style: "light", 
+				center: {
+					lon: -97, 
+					lat: 38}, 
+				zoom: 2.5
+			};
+			//mapPlot.layout.mapbox = mapBoxSave;
+			plotMap()
+		});
+		
+	}
+	
+	// draw the line plot
+	function plotLine(clickLockIndx){
+	
+		// line plot
+		var data = [{
+			type: 'scatter',
+			y: currYdata,
+			x: dateStr
+		}];
+
+		var layout = {
+			title: lineTitle,
+			/*yaxis: {
+				title: yaxislabel
+			}*/
+		};
+		
+		var config = {responsive: true}
+
+		Plotly.newPlot("linePlotDiv", data, layout, config);
+	}
+	
+	// functons for clicking radio button at top
+	deathCase.onchange = function() {
+		genZData();
+		mapBoxSave = mapPlot.layout.mapbox;
+		plotMap();
+		genYData(clickLockIndx);
+		plotLine(clickLockIndx);
+	}
+	k100.onchange = function() {
+		genZData();
+		mapBoxSave = mapPlot.layout.mapbox;
+		plotMap();
+		genYData(clickLockIndx);
+		plotLine(clickLockIndx);
+	}
+	last2.onchange = function() {
+		genZData();
+		mapBoxSave = mapPlot.layout.mapbox;
+		plotMap();
+		genYData(clickLockIndx);
+		plotLine(clickLockIndx);
+	}
+	
+	// choose the y data based on the radio buttons and click location
+	function genYData(clickLockIndx) {
+		if  (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'total') {
+			currYdata = zdata.deathsTS[clickLockIndx];
+			lineTitle = countyName[clickLockIndx] + ' - Total Deaths per Day';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'total'){
+			currYdata = zdata.casesTS[clickLockIndx];
+			lineTitle = countyName[clickLockIndx] + ' - Total New Confirmed Cases per Day';
+		}else if (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'k100'){
+			currYdata = zdata.deathsTS100k[clickLockIndx];
+			lineTitle = countyName[clickLockIndx] + ' - Deaths per 100k per Day';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'k100'){
+			currYdata = zdata.casesTS100k[clickLockIndx];
+			lineTitle = countyName[clickLockIndx] + ' - New Cases per 100k per Day';
+		}
+	}
+	
+	// choose the z data based on the radio buttons' values
+	function genZData() {
+		if  (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'total' & last2.last2.value === 'all') {
+			currYdata = zdata.deathsTot;
+			mapTitle = 'Total Deaths';
+			colorScale = '';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'total' & last2.last2.value === 'all'){
+			currZdata = zdata.casesTot;
+			mapTitle = 'Total Cases';
+			colorScale = [ ['0.0','rgb(210,210,210)'],['0.45','rgb(109,169,109)'],['1.0','rgb(0,0,229)'] ];
+		}else if (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'k100' & last2.last2.value === 'all'){
+			currZdata = zdata.deathsTot100k;
+			mapTitle = 'Deaths per 100k';
+			colorScale = '';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'k100' & last2.last2.value === 'all'){
+			currZdata = zdata.casesTot100k;
+			mapTitle = 'Cases per 100k';
+			colorScale = [ ['0.0','rgb(210,210,210)'],['0.45','rgb(109,169,109)'],['1.0','rgb(0,0,229)'] ];
+		}else if  (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'total' & last2.last2.value === 'last2') {
+			currZdata = zdata.deathsLast2;
+			mapTitle = 'Total Deaths in Last Two Weeks';
+			colorScale = '';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'total' & last2.last2.value === 'last2'){
+			currZdata = zdata.casesLast2;
+			mapTitle = 'Total Cases in Last Two Weeks';
+			colorScale = [ ['0.0','rgb(210,210,210)'],['0.45','rgb(109,169,109)'],['1.0','rgb(0,0,229)'] ];
+		}else if (deathCase.deathToggle.value === 'deaths' & k100.k100.value === 'k100' & last2.last2.value === 'last2'){
+			currZdata = zdata.deathsLast2100k;
+			mapTitle = 'Deaths per 100k in Last Two Weeks';
+			colorScale = '';
+		}else if (deathCase.deathToggle.value === 'cases' & k100.k100.value === 'k100' & last2.last2.value === 'last2'){
+			currZdata = zdata.casesLast2100k;
+			mapTitle = 'Cases per 100k in Last Two Weeks';
+			colorScale = [ ['0.0','rgb(210,210,210)'],['0.45','rgb(109,169,109)'],['1.0','rgb(0,0,229)'] ];
+		}
+	}
+    
+	
+	function unpack(rows, key) {
+		return rows.map(function(row) { return row[key]; });
+	}
+    
+})})});
+</script>
